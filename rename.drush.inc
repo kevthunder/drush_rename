@@ -13,7 +13,7 @@ function rename_drush_command () {
 	'description' => 'Move and Renames a module and its hooks.',
 	'arguments' => array(
 	  'module' => 'The module that will be renamed.',
-	  'destination' => 'The full destination folder for the new module',
+      'destination' => 'The destination folder for the new module',
 	),
 	'options' => array(
 	),
@@ -22,12 +22,26 @@ function rename_drush_command () {
   );
   $items['copy-module'] = array(
 	'description' => 'Copy and Renames a module and its hooks.',
-	'options' => array(
+    'arguments' => array(
 	  'module' => 'The module that will be renamed.',
-	  'destination' => 'The full destination folder for the new module',
+      'destination' => 'The destination folder for the new module',
+    ),
+    'options' => array(
 	),
 	'aliases' => array('mcp'),
 	'bootstrap' => DRUSH_BOOTSTRAP_DRUPAL_FULL,
+  );
+  $items['module-form-git'] = array(
+    'description' => 'Clone a gitted module and Renames it along its hooks.',
+    'arguments' => array(
+      'git_url' => 'The git reprository.',
+      'destination' => 'The destination folder for the new module',
+    ),
+    'options' => array(
+      'projectname' => 'The project name of the gitted module',
+    ),
+    'aliases' => array('mfg'),
+    'bootstrap' => DRUSH_BOOTSTRAP_DRUPAL_FULL,
   );
 
   return $items;
@@ -50,10 +64,12 @@ function rename_drush_command () {
  *   A string with the help text for your command.
  */
 function rename_drush_help($section) {
-  switch ($section) {
-	case 'drush:module-rename':
-	  return dt('Renames a module and its hooks. Usage is drush module-rename --module=fun --name=work');
-  }
+  $help = array(
+    'drush:move-module' => dt('Move and Renames a module and its hooks. Usage is "drush mmv fun work"'),
+    'drush:copy-module' => dt('Copy and Renames a module and its hooks. Usage is "drush mcp fun work"'),
+    'drush:module-form-git' => dt('Clone a gitted module and Renames it along its hooks. Usage is "drush mfg git@github.com:foo/bar.git baz"')
+  );
+  if(!empty($help[$section])) return $help[$section];
 }
 
 
@@ -67,6 +83,15 @@ function drush_rename_copy_module($module = NULL, $destination = NULL) {
 	return $p->exec();
 }
 
+function drush_rename_module_form_git($repo = NULL, $destination = NULL) {
+  $folder = (dirname($destination) == '.' ? 'sites/default/modules' : dirname($destination));
+  $projectname = drush_get_option('projectname', basename($repo,'.git'));
+  if(!drush_shell_exec('git archive --format=tar --prefix=%s/ --remote=%s master | tar -xf - -C %s',$projectname,$repo,$folder)){
+    return drush_set_error("Could not get the source.");
+  }
+	$p = new DrushRenameProcess($folder.'/'.$projectname, $destination, $op = 'mv');
+	return $p->exec();
+}
 /**
  * Run the actual renaming.
  *
@@ -133,24 +158,34 @@ class DrushRenameProcess {
 		'/\.inc$/' => 'replace_names',
 		'/\.module$/' => 'replace_names',
 		'/\.info$/' => 'replace_names',
+		'/\.install$/' => 'replace_names',
+		'/\.po$/' => 'replace_names',
+		'/\.pot$/' => 'replace_names',
 	);
 	
 	public function __construct($module, $destination, $op = 'mv') {
+    if(dirname($module) == '.') {
 		$this->module = $module;
+    }else{
+      $this->module = basename($module);
+      $this->module_path = $module;
+    }
 		$this->destination = $destination;
 		$this->op = $op;
 	}
 	
 	public function exec(){
+    if(empty($this->module_path)){
 		$module_path = DrushRenameHelper::get_project_path($this->module);
 		if(!$module_path){
 			return drush_set_error("The module that was specified does not exist.");
 		}
 		$this->module_path = $module_path;
+    }
 		
-		$this->dest_path = DrushRenameHelper::gess_dest_path($module_path,$this->destination);
+		$this->dest_path = DrushRenameHelper::gess_dest_path($this->module_path,$this->destination);
 		$this->dest_module = basename($this->destination);
-		drush_print("$module_path to $this->dest_path");
+		drush_print("$this->module_path to $this->dest_path");
 
 		if(!drush_shell_exec($this->op.' %s %s', $this->module_path, $this->dest_path)){
 			return drush_set_error("Could not copy module.");
