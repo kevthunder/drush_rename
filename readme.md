@@ -4,4 +4,11 @@ Renames a module and its hooks.
 
 ## Installation
 
-put the rename.drush.inc in /sites/all/drush
+```sh
+drush en drush_rename
+```
+
+## Developpement
+
+```sh
+```

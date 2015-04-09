@@ -1,0 +1,25 @@
+<?php
+
+/**
+ * @file
+ * Installation file for the drush_rename module.
+ */
+
+/**
+ * Implementation of hook_install().
+ */
+function drush_rename_install() {
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function drush_rename_uninstall() {
+}
+
+/**
+ * Implementation of hook_schema_alter().
+ */
+function drush_rename_schema_alter(&$schema) {
+}
+

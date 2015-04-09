@@ -1,0 +1,8 @@
+<?php
+
+/**
+ * @file drush_rename.module
+ * Main file for the drush_rename module.
+ *
+ */
+ 

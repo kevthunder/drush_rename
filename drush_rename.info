@@ -1,0 +1,7 @@
+name = [todo] name
+description = [todo] description
+core = 7.x
+files[] = drush_rename.module
+files[] = drush_rename.install
+
+

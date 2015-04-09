@@ -1,0 +1,13 @@
+{
+    "name": "kgiguere/drush_raname",
+    "description": "Renames a module and its hooks.",
+    "authors": [
+        {
+            "name": "Kevin Giguere",
+            "email": "kgiguere@o2web.ca"
+        }
+    ],
+    "require": {
+        "icanboogie/inflector": "*"
+    }
+}
