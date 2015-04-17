@@ -21,7 +21,7 @@ class DrushRenameHelper {
 }
 
 class DrushRenameProcess {
-	
+	var $version = '0.1.0';
 	var $checks = array(
 		'/\.info$/' => array('replace_names','replace_info'),
 		'/^readme/i' => array('replace_names','replace_info'),
@@ -32,6 +32,7 @@ class DrushRenameProcess {
 		'/\.po$/' => 'replace_names',
 		'/\.pot$/' => 'replace_names',
 	);
+  var $outputBuffering = false;
 	
 	public function __construct($module, $destination, $op = 'mv') {
     
@@ -62,6 +63,12 @@ class DrushRenameProcess {
 
     if(file_exists($this->dest_path)){
       if(drush_confirm('The target folder already exists, do you want to overwrite it?')){
+        if(file_exists($this->dest_path.'/rename_choices')){
+          if(drush_confirm('Do you want to use the same settings as the last time ?')){
+            $this->load_choices();
+            $choices_loaded = true;
+          }
+        }
         if(!drush_shell_exec('rm -rf %s', $this->dest_path)){
           return drush_set_error("Could not remove old folder.");
         }
@@ -72,8 +79,28 @@ class DrushRenameProcess {
 		if(!drush_shell_exec($this->op.' %s %s', $this->module_path, $this->dest_path)){
 			return drush_set_error("Could not copy module.");
 		}
+    if(!empty($choices_loaded)){
+      $this->save_choices();
+    }
 		$this->load_module_config();
 		$this->check_files($this->dest_path);
+    $this->save_choices();
+	}
+  
+  function load_choices(){
+    $choices = array();
+    include $this->dest_path.'/rename_choices';
+    return $this->choices = $choices;
+  }
+  
+  function save_choices(){
+    $content = '<?php' . "\n" .
+      '  $renameVersion = \'' . $this->version . "';\n" .
+      '  $template = \'' . $this->module . "';\n" .
+      '  $templateVersion = \'' . $this->config->version . "';\n" .
+      '  $choices = ' . $this->indent(var_export($this->choices,true),1) . ";\n" .
+      '?>';
+    file_put_contents( $this->dest_path.'/rename_choices' , $content);
 	}
   
   function add_checks($additions){
@@ -86,10 +113,13 @@ class DrushRenameProcess {
     }
   }
   
-  var $_cachedPrompts = array();
+  var $choices = array();
   function prompt($q,$cacheKey = null){
-    if(!empty($cacheKey) && !empty($this->_cachedPrompts[$cacheKey])) 
-      return $this->_cachedPrompts[$cacheKey];
+    if(!empty($cacheKey) && !empty($this->choices[$cacheKey])) 
+      return $this->choices[$cacheKey];
+    if($this->outputBuffering){
+      $tmp = ob_get_clean();
+    }
     if(is_array($q)){
       $def = array(
         'default' => null,
@@ -100,9 +130,24 @@ class DrushRenameProcess {
     }else{
       $res = drush_prompt($q);
     }
+    if($this->outputBuffering){
+      ob_start(); 
+      echo $tmp;
+    }
     if(!empty($cacheKey))
-      $this->_cachedPrompts[$cacheKey] = $res;
+      $this->choices[$cacheKey] = $res;
     return $res;
+  }
+  
+  function output($txt){
+    if($this->outputBuffering){
+      $tmp = ob_get_clean();
+    }
+    drush_print($txt);
+    if($this->outputBuffering){
+      ob_start(); 
+      echo $tmp;
+    }
   }
   
   function replace_promp($search,$q,$text,$cacheKey = null){
@@ -125,11 +170,14 @@ class DrushRenameProcess {
       if(!empty($this->config->checks)){
         $this->add_checks($this->config->checks);
       }
+      unlink($config_file);
+    }else{
+      $this->config = new RenameOptions($this);
     }
   }
   
   public function run_check_funct($name,$file){
-    if($this->config && method_exists($this->config, $name)){
+    if(method_exists($this->config, $name)){
       $this->config->{$name}($file);
     }else if(method_exists($this, $name)){
       $this->{$name}($file);
@@ -140,12 +188,18 @@ class DrushRenameProcess {
 		
 		$files = scandir($path);
 		foreach($files as $file) {
-			if(!in_array($file,array('.','..'))){
+			if(!in_array($file,array('.','..','.git'))){
 				$ffile = $path.'/'.$file;
         $ffile = $this->rename_file($ffile);
 				if(is_dir($ffile)){
 					$this->check_files($ffile);
 				}else{
+          if(preg_match('/\.rename\.tpl$/',$file)){
+            $rendered = $this->renderTemplate($ffile);
+            $ffile = $rendered;
+            $file = basename($rendered);
+          }
+          if(empty($rendered) or $this->config->checkRendered){
 					foreach($this->checks as $reg => $functs){
 						if(preg_match($reg,$file)){
 							foreach ((array)$functs as $funct) {
@@ -153,14 +207,29 @@ class DrushRenameProcess {
 							}
 						}
 					}
+          }
 					drush_print($file);
 				}
 			}
 		}
 	}
   
+  public function renderTemplate($file){
+    $inflector = Inflector::get();
+    $this->outputBuffering = true;
+    ob_start(); 
+    include $file;
+    $content = ob_get_clean();
+    $this->outputBuffering = false;
+    $content = str_replace(array('<!--?php','?-->'),array('<?php','?>'),$content);
+    $newFile = preg_replace('/\.rename\.tpl$/','',$file);
+    file_put_contents( $newFile , $content );
+    unlink($file);
+    return $newFile;
+  }
+  
 	public function file_new_name($file){
-    if($this->config && method_exists($this->config, 'file_new_name')){
+    if(method_exists($this->config, 'file_new_name')){
       $new_file = $this->config->file_new_name($file);
       if($file != $new_file) return $new_file;
     }
@@ -201,5 +270,23 @@ class DrushRenameProcess {
 		$str=$this->replace_promp('[todo] description', array('prompt'=>'Module description','default'=>$def),$str,true);
 		file_put_contents($file, $str);
 	}
+  
+  function indent($txt,$level=1,$space='  '){
+    return str_replace("\n","\n".str_repeat($space , $level),$txt);
+  }
+  function arrayKeysExport($arr){
+    return preg_replace('/^array\s*\(\n(.*)\n\)$/s','\1',var_export($arr,true));
+  }
+  
+}
+class RenameOptions {
+  
+    var $checks = array();
+    var $checkRendered = false;
+    var $version = '0.0.1';
+    
+    function __construct($process) {
+      $this->process = $process;
+    }
 }
 ?>
