@@ -1,5 +1,5 @@
 {
-    "name": "kgiguere/drush_raname",
+    "name": "kgiguere/drush_rename",
     "description": "Renames a module and its hooks.",
     "authors": [
         {
